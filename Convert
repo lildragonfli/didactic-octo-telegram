@@ -1,0 +1,72 @@
+function Decrypt(
+           $bmpFile,       // The bitmap file contains the encrypted data
+           $key,           // The key to encrypt the data
+           $outFile = ""   // The output data file
+           ) {
+
+    if (!file_exists($bmpFile)) {  // Exit if file doesn't exist...
+      $this->m_errMsg = "The bitmap file '".$bmpFile."' was not found!";
+      return false;
+      }
+
+    if ($key != "") $this->m_key = $key;
+    $this->m_outFile = $outFile;
+
+    $this->m_dataCarrier = $bmpFile;
+
+    $this->m_data = file_get_contents($this->m_dataCarrier);  // Load the bitmap file data to $bmpBuffer
+
+    if (!$this->_get_encryption_info($level, $cryptKey, $offset, $datSize)) return false;
+
+    $nbytes = ($level == 1) ? 8 : (($level == 2) ? 4 : (($level == 3) ? 3 : 2));
+
+    if ($offset + $datSize * $nbytes > strlen($this->m_data)) {  // Exit if the data size is incorrect...
+      $this->m_errMsg = "The bitmap file '".$this->m_dataCarrier."' contains no encrypted data!".$level.", $nbytes";
+      return false;
+      }
+
+    $data = "";  // Prepare to retrieve the encrypted data from the bitmap buffer
+    for ($i = 0; $i < $datSize; $i++)
+      $data = chr(0);
+
+    for ($i = $offset, $j = 0; $i < $offset + $datSize * $nbytes; $i += $nbytes, $j++) {  // Extract data from the next ($datSize x $nbytes) bytes of bitmap data
+      // Collect the least-significant bits and pack it in byte
+      if ($level == 1) {
+        for ($k = 0, $n = 7; $k < 8; $k++, $n--)
+          $data[$j] = chr(ord($data[$j]) | ((ord($this->m_data[$i+$k]) & 1) << $n));
+        }
+      else if ($level == 2) {
+        for ($k = 0, $n = 6; $k < 4; $k++, $n -= 2)
+          $data[$j] = chr(ord($data[$j]) | ((ord($this->m_data[$i+$k]) & 3) << $n));
+        }
+      else if ($level == 3) {
+        for ($k = 0; $k < 3; $k++) {
+          if ($k == 0)
+            $data[$j] = chr(ord($data[$j]) | ((ord($this->m_data[$i]) & 7) << 5));
+          else if ($k == 1)
+            $data[$j] = chr(ord($data[$j]) | ((ord($this->m_data[$i+1]) & 7) << 2));
+          else
+            $data[$j] = chr(ord($data[$j]) | (ord($this->m_data[$i+2]) & 3));
+          }
+        }
+      else if ($level == 4) {
+        for ($k = 0; $k < 2; $k++) {  // Collect three least-significant bits and pack it in byte
+          if ($k == 0)
+            $data[$j] = chr(ord($data[$j]) | ((ord($this->m_data[$i]) & 15) << 4));
+          else
+            $data[$j] = chr(ord($data[$j]) | (ord($this->m_data[$i+1]) & 15));
+          }
+        }
+      }
+
+    for ($i = 0, $j = 0; $i < $datSize; $i++, $j = ($j + 1) % 32)  // Decrypt the encrypted data with the decryption key
+      $data[$i] = chr(ord($data[$i]) ^ ord($cryptKey[$j]));
+
+    if ($this->m_outFile != "") {  // Save the data to a file if output filename is specified
+      $fp = fopen($this->m_outFile, "wb");
+      fwrite($fp, $data, $datSize);
+      fclose($fp);
+      return true;
+      }
+
+    return $data;
